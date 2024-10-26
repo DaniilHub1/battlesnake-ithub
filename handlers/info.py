@@ -1,8 +1,8 @@
 def handle_info() -> dict:
     return {
         "apiversion": "1",
-        "author": "",  # Your Battlesnake Username
-        "color": "#888888",  # Choose color
-        "head": "scarf",  # Choose head
-        "tail": "skinny",  # Choose tail
+        "author": "IT-Colleques",  # Your Battlesnake Username
+        "color": "#ADFF2F",  # Choose color
+        "head": "silly",  # Choose head
+        "tail": "skinny-jeans",  # Choose tail
     }

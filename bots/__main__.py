@@ -37,7 +37,7 @@ def main():
         return json.dumps({"taunt": "hello", "move": move.direction()})
 
     @app.route("/<snake_name>/end", methods=["GET", "POST"])
-    def end():
+    def end(snake_name):
         return "ok"
 
     app.run(host="localhost", port=7001, debug=True)
