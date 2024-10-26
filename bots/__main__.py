@@ -1,47 +1,143 @@
-import json
-from flask import Flask, request
-from snakes import get_snake
+import random
 
 
-def main():
-    app = Flask(__name__)
+# See https://docs.battlesnake.com/api/example-move for available data
+def handle_move(game_state: dict) -> dict:
+    is_move_safe = {"up": True, "down": True, "left": True, "right": True}
 
-    @app.route("/<snake_name>/")
-    def index(snake_name):
-        color = "#ee0000" if snake_name == "dummy" else "#ef30be"
-        return {
-            "apiversion": "1",
-            "author": "Battlesnake",
-            "color": color,
-            "head": "default",
-            "tail": "default",
-        }
+    # prevent from moving backwards
+    my_head = game_state["you"]["body"][0]  # Coords of your head
+    my_neck = game_state["you"]["body"][1]  # Coords of your "neck"
 
-    @app.route("/<snake_name>/start", methods=["POST"])
-    def start():
-        return "ok"
+    if my_neck["x"] < my_head["x"]:  # Neck is left of head, don't move left
+        is_move_safe["left"] = False
 
-    @app.route("/<snake_name>/move", methods=["POST"])
-    def move(snake_name):
-        snake = get_snake(snake_name)()
-        data = request.get_json()
-        gamestate = snake.payload_to_game_state(data)
-        move = snake.move(gamestate)
-        if not move:
-            return json.dumps({"move": "up", "taunt": "hello"})
+    elif my_neck["x"] > my_head["x"]:  # Neck is right of head, don't move right
+        is_move_safe["right"] = False
 
-        if type(move) is tuple:
-            move, taunt = move
-            return json.dumps({"move": move.direction(), "taunt": taunt})
+    elif my_neck["y"] < my_head["y"]:  # Neck is below head, don't move down
+        is_move_safe["down"] = False
 
-        return json.dumps({"taunt": "hello", "move": move.direction()})
+    elif my_neck["y"] > my_head["y"]:  # Neck is above head, don't move up
+        is_move_safe["up"] = False
 
-    @app.route("/<snake_name>/end", methods=["GET", "POST"])
-    def end(snake_name):
-        return "ok"
+    #Step 1 - Prevent your Battlesnake from moving out of bounds
+    board_width = game_state['board']['width']
+    board_height = game_state['board']['height']
+    if my_head["x"] == 0:
+        is_move_safe["left"] = False
+    if my_head["x"] == board_width - 1:
+        is_move_safe["right"] = False
+    if my_head["y"] == 0:
+        is_move_safe["down"] = False
+    if my_head["y"] == board_height - 1:
+        is_move_safe["up"] = False
+    #Step 2 - Prevent your snake from colliding with itself
+    my_body = game_state['you']['body']
+    for coords in my_body:
+        if my_head["x"] + 1 == coords["x"] and my_head["y"] == coords["y"]:
+            is_move_safe["right"] = False
+        if my_head["x"] - 1 == coords["x"] and my_head["y"] == coords["y"]:
+            is_move_safe["left"] = False
+        if my_head["x"] == coords["x"] and my_head["y"] + 1 == coords["y"]:
+            is_move_safe["up"] = False
+        if my_head["x"] == coords["x"] and my_head["y"] - 1 == coords["y"]:
+            is_move_safe["down"] = False
+    #Step 3 - Prevent your snake from colliding with other snakes
+    opponents = game_state['board']['snakes']
+    for i in range(len(opponents)):
+        opponents_coords = opponents[i]['body']
+        for j in range(len(opponents_coords)):
+            if my_head["x"] + 1 == opponents_coords[j]["x"] and my_head["y"] == opponents_coords[j]["y"]:
+                is_move_safe["right"] = False
+            if my_head["x"] - 1 == opponents_coords[j]["x"] and my_head["y"] == opponents_coords[j]["y"]:
+                is_move_safe["left"] = False
+            if my_head["x"] == opponents_coords[j]["x"] and my_head["y"] + 1 == opponents_coords[j]["y"]:
+                is_move_safe["up"] = False
+            if my_head["x"] == opponents_coords[j]["x"] and my_head["y"] - 1 == opponents_coords[j]["y"]:
+                is_move_safe["down"] = False
+    #Step 4 - Prevent dead-end next to next move
+    # -> Right ->
+    my_head_next = {"x": my_head["x"] +1 , "y": my_head["y"]}
+    my_body = game_state['you']['body']
+    my_body_next = my_body
+    for i in range(len(my_body)):
+        my_body_next[i]["x"] = my_body[i]["x"] + 1
+    for coords in my_body_next:
+        if my_head_next["x"] + 1 == coords["x"] and my_head_next["y"] == coords["y"]\
+                and my_head_next["x"] == board_width-1:
+            is_move_safe["right"] = False
+        elif my_head_next["x"] - 1 == coords["x"] and my_head_next["y"] == coords["y"] and my_head_next["x"] == 0:
+            is_move_safe["right"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] + 1 == coords["y"]\
+                and my_head_next["y"] == board_height - 1:
+            is_move_safe["right"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] - 1 == coords["y"] and my_head_next["y"] == 0:
+            is_move_safe["right"] = False
+    # left
+    my_head_next = {"x": my_head["x"] - 1, "y": my_head["y"]}
+    my_body = game_state['you']['body']
+    my_body_next = my_body
+    for i in range(len(my_body)):
+        my_body_next[i]["x"] = my_body[i]["x"] - 1
+    for coords in my_body_next:
+        if my_head_next["x"] + 1 == coords["x"] and my_head_next["y"] == coords["y"] \
+                and my_head_next["x"] == board_width - 1:
+            is_move_safe["left"] = False
+        elif my_head_next["x"] - 1 == coords["x"] and my_head_next["y"] == coords["y"] and my_head_next["x"] == 0:
+            is_move_safe["left"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] + 1 == coords["y"] \
+                and my_head_next["y"] == board_height - 1:
+            is_move_safe["left"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] - 1 == coords["y"] and my_head_next["y"] == 0:
+            is_move_safe["left"] = False
+    # up
+    my_head_next = {"x": my_head["x"], "y": my_head["y"] + 1}
+    my_body = game_state['you']['body']
+    my_body_next = my_body
+    for i in range(len(my_body)):
+        my_body_next[i]["y"] = my_body[i]["y"] + 1
+    for coords in my_body_next:
+        if my_head_next["x"] + 1 == coords["x"] and my_head_next["y"] == coords["y"] \
+                and my_head_next["x"] == board_width - 1:
+            is_move_safe["up"] = False
+        elif my_head_next["x"] - 1 == coords["x"] and my_head_next["y"] == coords["y"] and my_head_next["x"] == 0:
+            is_move_safe["up"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] + 1 == coords["y"] \
+                and my_head_next["y"] == board_height - 1:
+            is_move_safe["up"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] - 1 == coords["y"] and my_head_next["y"] == 0:
+            is_move_safe["up"] = False
+    # down
+    my_head_next = {"x": my_head["x"], "y": my_head["y"] - 1}
+    my_body = game_state['you']['body']
+    my_body_next = my_body
+    for i in range(len(my_body)):
+        my_body_next[i]["y"] = my_body[i]["y"] - 1
+    for coords in my_body_next:
+        if my_head_next["x"] + 1 == coords["x"] and my_head_next["y"] == coords["y"] \
+                and my_head_next["x"] == board_width - 1:
+            is_move_safe["down"] = False
+        elif my_head_next["x"] - 1 == coords["x"] and my_head_next["y"] == coords["y"] and my_head_next["x"] == 0:
+            is_move_safe["down"] = False
+        elif my_head_next["x"] == coords["x"] and my_head_next["y"] + 1 == coords["y"] \
+                and my_head_next["y"] == board_height - 1:
+            is_move_safe["down"] = False
+        if my_head_next["x"] == coords["x"] and my_head_next["y"] - 1 == coords["y"] and my_head_next["y"] == 0:
+            is_move_safe["down"] = False
+    safe_moves = []
+    for move, is_safe in is_move_safe.items():
+        if is_safe:
+            safe_moves.append(move)
 
-    app.run(host="localhost", port=7001, debug=True)
+    # Move down if there is no better solution...
+    if len(safe_moves) == 0:
+        return {"move": random.choice(["up", "down", "left", "right"])}
+    # Choose a random move from the safe ones
+    next_move = random.choice(safe_moves)
 
+    # TODO: Step 4 - Move towards food instead of random, to regain health
+    # food = game_state['board']['food']
 
-if __name__ == "__main__":
-    main()
+    print(f"MOVE {game_state.get('turn', '')}: {next_move}")
+    return {"move": next_move}
